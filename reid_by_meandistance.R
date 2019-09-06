@@ -24,31 +24,32 @@ dat_info_region = readr::read_csv("./sample/Data/info_region.csv")
 ## 一般化されていたら、重心の位置に置き換た上で、
 ## 各時刻における距離の時間平均が、最も近いユーザを探す
 reid_by_meandistance = function(dat_ano = dat_ano, dat_ref = dat_ref, dat_info_region = dat_info_region){
+  ## 座標を取得する
   dat_info_region %>% 
     mutate(reg_id = as.character(reg_id)) %>% 
     select(reg_id, y = `y(center)`, x = `x(center)`, hospital) -> dat_region
   
+  ## 参照トレースの前処理
   dat_ref %>%
     mutate(time_id = as.numeric(time_id) + 40) %>%  ## time_idを合わせる
     mutate(time_id = as.character(time_id)) %>% 
     select(user_id_ref = user_id, reg_id_ref = reg_id, time_id_ref = time_id) %>% 
     mutate(reg_id_ref = as.character(reg_id_ref)) -> dat_ref_reid
   
+  ## 位置情報とjoin
   dat_ref_reid %>% 
     inner_join(dat_region, by = c("reg_id_ref" = "reg_id")) %>% 
     rename(x_ref = x, y_ref = y) %>% 
     select(-reg_id_ref) -> dat_ref_xy
     
-  # dat_ano = dat_org
+  ## 匿名トレースの前処理 一般化されていたら、平均位置に置き換える
   dat_ano %>% 
     tidyr::separate_rows(reg_id, sep=" ") %>% 
     inner_join(dat_region, by = "reg_id") %>% 
     group_by(user_id, time_id) %>% 
     summarise(x = mean(x), y = mean(y)) -> dat_ano_reid
-  dat_ano_reid %>% dim
   
-  dat_ref_xy %>% dim
-  
+  ## ユーザxユーザで頑張って距離を計算する
   dat_ref_xy %>% 
     inner_join(dat_ano_reid, by = c("time_id_ref" = "time_id")) %>% 
     mutate(distance = ((x_ref - x)**2 + (y_ref - y)**2) ** 0.5) %>% 
@@ -58,8 +59,7 @@ reid_by_meandistance = function(dat_ano = dat_ano, dat_ref = dat_ref, dat_info_r
     summarise(mean_distance = mean(distance)) %>% 
     ungroup -> dat_res_tmp
   
-  dat_ref_xy %>% head
-  
+  ## 距離最小のユーザを取得する
   dat_res_tmp %>% 
     group_by(user_id_ref) %>% 
     filter(mean_distance == min(mean_distance)) %>% 
@@ -69,11 +69,12 @@ reid_by_meandistance = function(dat_ano = dat_ano, dat_ref = dat_ref, dat_info_r
     return
 }
 
+## ユーザ2000人の時、手元のRAM 16GBの端末で1分くらい
 start = Sys.time()
 result = reid_by_meandistance(dat_ano = dat_ano, dat_ref = dat_ref, dat_info_region = dat_info_region)
 Sys.time() - start
 
-  
+## 正解できた人数 (答えが分かっている場合)  
 result %>% filter(user_id_ref == user_id) %>% dim
 
 result %>% head
